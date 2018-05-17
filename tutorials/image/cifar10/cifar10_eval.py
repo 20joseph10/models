@@ -45,13 +45,13 @@ import cifar10
 
 FLAGS = tf.app.flags.FLAGS
 
-tf.app.flags.DEFINE_string('eval_dir', '/tmp/cifar10_eval',
+tf.app.flags.DEFINE_string('eval_dir', './tmp/cifar10_eval',
                            """Directory where to write event logs.""")
 tf.app.flags.DEFINE_string('eval_data', 'test',
                            """Either 'test' or 'train_eval'.""")
-tf.app.flags.DEFINE_string('checkpoint_dir', '/tmp/cifar10_train',
+tf.app.flags.DEFINE_string('checkpoint_dir', './tmp/cifar10_train',
                            """Directory where to read model checkpoints.""")
-tf.app.flags.DEFINE_integer('eval_interval_secs', 60 * 5,
+tf.app.flags.DEFINE_integer('eval_interval_secs', 50 * 1,
                             """How often to run the eval.""")
 tf.app.flags.DEFINE_integer('num_examples', 10000,
                             """Number of examples to run.""")
@@ -59,7 +59,7 @@ tf.app.flags.DEFINE_boolean('run_once', False,
                          """Whether to run eval only once.""")
 
 
-def eval_once(saver, summary_writer, top_k_op, summary_op):
+def eval_once(saver, summary_writer, top_k_op, summary_op, accuracy):
   """Run Eval once.
 
   Args:
@@ -98,8 +98,14 @@ def eval_once(saver, summary_writer, top_k_op, summary_op):
         true_count += np.sum(predictions)
         step += 1
 
-      # Compute precision @ 1.
+      # Compute precision @ 1.      
       precision = true_count / total_sample_count
+
+      # valid_acc, valid_summ = sess.run([accuracy, validation_summary])
+      # summary_writer.add_summary(valid_summ, global_step)
+      valid_acc = sess.run(accuracy)
+      print("Accuracy at step %s: %s" % (global_step, valid_acc))
+      
       print('%s: precision @ 1 = %.3f' % (datetime.now(), precision))
 
       summary = tf.Summary()
@@ -125,7 +131,14 @@ def evaluate():
     logits = cifar10.inference(images)
 
     # Calculate predictions.
-    top_k_op = tf.nn.in_top_k(logits, labels, 1)
+    # top_k_op = tf.nn.in_top_k(logits, labels, 1)
+    with tf.name_scope('accuracy'):
+      with tf.name_scope('correct_prediction'):
+        # correct_prediction = tf.equal(tf.argmax(logits, 1), labels)
+        top_k_op = tf.nn.in_top_k(logits, labels, 1)
+      with tf.name_scope('accuracy'):
+        accuracy = tf.reduce_mean(tf.cast(top_k_op, tf.float32))
+    tf.summary.scalar('accuracy', accuracy)
 
     # Restore the moving average version of the learned variables for eval.
     variable_averages = tf.train.ExponentialMovingAverage(
@@ -139,7 +152,7 @@ def evaluate():
     summary_writer = tf.summary.FileWriter(FLAGS.eval_dir, g)
 
     while True:
-      eval_once(saver, summary_writer, top_k_op, summary_op)
+      eval_once(saver, summary_writer, top_k_op, summary_op, accuracy)
       if FLAGS.run_once:
         break
       time.sleep(FLAGS.eval_interval_secs)
